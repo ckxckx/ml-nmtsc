@@ -59,23 +59,34 @@ for dataset in [train_df, test_df]:
                     continue
 
                 if word not in vocabulary:
+                    # ckx: 将 指令 onehot 前先为每一条出现的指令赋予一个序号，也就是这里的len(...)
+                    # 一个q2n list代表一个 block，由一串指令构成，每一条指令由vocalbulary字典中的一个索引序号值表示
+                    #以下过程一边构造q2n，一边添加vocabulary词汇表
                     vocabulary[word] = len(inverse_vocabulary)
                     q2n.append(len(inverse_vocabulary))
                     inverse_vocabulary.append(word)
+                    # ckx: q2n中的序号和 inverse_vocabulary中的指令现在就是意义对应的两个list inverse_vocabulary[q2n[0]] 就访问到 第一条instruction
                 else:
                     q2n.append(vocabulary[word])
 
+
             # Replace questions as word to question as number representation
+            # ckx：将每一行的汇编文字表示转换成序号的表示
             dataset.set_value(index, question, q2n)
             
 embedding_dim = w2v_dim
+
 # This will be the embedding matrix
+# ckx：二维数组，行数为词汇字典容量+1，列数为词嵌入的目标维度
+
 embeddings = 1 * np.random.randn(len(vocabulary) + 1, embedding_dim)  
 embeddings[0] = 0  # So that the padding will be ignored
 
 # Build the embedding matrix, please refer to the meeting slides for more detailed explanation
+# 构造嵌入矩阵，矩阵每一行，相当于one hot编码的参数
 for word, index in vocabulary.items():
     if word in model.wv:
+
         embeddings[index] = model.wv[word]
 
 max_seq_length=101
@@ -94,9 +105,15 @@ def exponent_neg_manhattan_distance(left, right):
     return K.exp(-K.sum(K.abs(left-right), axis=1, keepdims=True))
 
 
+
+#ckx: 准备输入
+
+
 left_input = Input(shape=(max_seq_length,), dtype='int32')
 right_input = Input(shape=(max_seq_length,), dtype='int32')
 
+
+#ckx: 嵌入层
 embedding_layer = Embedding(len(embeddings), embedding_dim, weights=[embeddings], \
                             input_length=max_seq_length, trainable=False)
 
@@ -105,18 +122,23 @@ encoded_left = embedding_layer(left_input)
 encoded_right = embedding_layer(right_input)
 
 # The 1st hidden layer
+#ckx： RNN LSTM 层
 shared_lstm_01 = LSTM(n_units_1st_layer, return_sequences=True)
 # The 2nd hidden layer
 shared_lstm_02 = LSTM(n_units_2nd_layer, activation='relu')
 
 left_output = shared_lstm_02(shared_lstm_01(encoded_left) )
 right_output= shared_lstm_02(shared_lstm_01(encoded_right))
-
+#ckx：合并？？？
 my_distance = Merge(mode=lambda x: exponent_neg_manhattan_distance(x[0], x[1]), \
                         output_shape=lambda x: (x[0][0], 1))([left_output, right_output])
 
+#合成的就是siamese network
 # Pack it all up into a model
 smodel = Model([left_input, right_input], [my_distance])
+
+
+#载入训练好的参数
 smodel.load_weights(saved_weights)
 
 pred = smodel.predict([X_test['left'], X_test['right']])
@@ -124,14 +146,14 @@ pred = smodel.predict([X_test['left'], X_test['right']])
 fpr, tpr, _ = roc_curve(Y_test, pred, pos_label=1)
 roc_auc = auc(fpr, tpr)*100
 
-plt.figure()
-plt.plot(fpr, tpr, color='red', linewidth = 1.2, label='Siamese Model (AUC = %0.2f%%)' % roc_auc)
+# plt.figure()
+# plt.plot(fpr, tpr, color='red', linewidth = 1.2, label='Siamese Model (AUC = %0.2f%%)' % roc_auc)
 
-plt.plot([0, 1], [0, 1], color = 'silver', linestyle = ':', linewidth = 1.2)
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.xlabel('False Positive Rate', fontsize=12)
-plt.ylabel('True Positive Rate', fontsize=12)
-plt.title('Receiver Operating Characteristic (ROC)')
-plt.legend(loc="lower right")
-plt.show()
+# plt.plot([0, 1], [0, 1], color = 'silver', linestyle = ':', linewidth = 1.2)
+# plt.xlim([0.0, 1.0])
+# plt.ylim([0.0, 1.05])
+# plt.xlabel('False Positive Rate', fontsize=12)
+# plt.ylabel('True Positive Rate', fontsize=12)
+# plt.title('Receiver Operating Characteristic (ROC)')
+# plt.legend(loc="lower right")
+# plt.show()
